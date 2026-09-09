@@ -1,18 +1,22 @@
 import { useCallback, useState } from "react";
 import { Icon, MenuBarExtra, showHUD } from "@raycast/api";
-import { findSessionsWithoutWindow, focusVSCodeWindow } from "./lib/focus";
-import { STATUS_COLOR, STATUS_ICON, STATUS_LABEL, displayTitle, folderNameOf, formatRelativeTime } from "./lib/format";
+import { findSessionsWithoutWindow, focusSessionWindow } from "./lib/focus";
+import { STATUS_COLOR, STATUS_ICON, STATUS_LABEL, displayTitle, formatRelativeTime } from "./lib/format";
 import { buildMenuBarTitle } from "./lib/menubar-title";
 import { ALL_STATUSES, countByStatus, readSessions, removeSessions, type SessionEntry } from "./lib/state";
 
 async function focusSession(session: SessionEntry): Promise<void> {
-  if (!(await focusVSCodeWindow(session.cwd))) {
-    await showHUD(`該当ウィンドウなし: ${folderNameOf(session)}`);
-  }
+  const result = await focusSessionWindow(session);
+  if (result.message) await showHUD(result.message);
 }
 
 async function removeSessionsWithoutWindow(sessions: SessionEntry[]): Promise<void> {
-  const ids = findSessionsWithoutWindow(sessions);
+  const found = await findSessionsWithoutWindow(sessions);
+  if (found.ids === null) {
+    await showHUD(found.message);
+    return;
+  }
+  const ids = found.ids;
   if (ids.length === 0) {
     await showHUD("削除対象なし");
     return;

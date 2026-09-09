@@ -2,7 +2,7 @@
 
 Claude Code のセッション状態をメニューバーに表示する Raycast 拡張。
 
-表示: `🚨承認待ち 🏃‍➡️実行中 🏁完了` の件数。メニューを開くとセッション一覧、クリックで該当 VS Code ウィンドウを前面化。
+表示: `🚨承認待ち 🏃‍➡️実行中 🏁完了` の件数。メニューを開くとセッション一覧、クリックでそのセッションが動いているウィンドウ/タブへ切り替え。
 
 ## Setup
 
@@ -38,6 +38,10 @@ npx ray develop
 ```
 
 Raycast で「Claude Sessions」を実行するとメニューバーに常駐する（10 秒間隔で更新）。
+
+### 3. 設定
+
+Raycast の拡張設定「ターミナルアプリ」で Claude Code を動かしているアプリを選ぶ（既定: Visual Studio Code）。VS Code はウィンドウ、iTerm2 / Terminal はタブまで切り替える（初回に Raycast の Automation 権限ダイアログが出る）。それ以外のアプリは前面化のみ。
 
 ## Development
 
