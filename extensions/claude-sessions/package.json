@@ -1,0 +1,41 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "claude-sessions",
+  "title": "Claude Sessions",
+  "description": "Show Claude Code session status (waiting / running / done) in the macOS menu bar and jump to the VS Code window.",
+  "icon": "icon.png",
+  "author": "akgw",
+  "categories": [
+    "Developer Tools",
+    "Productivity"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "menu-bar",
+      "title": "Claude Sessions",
+      "description": "Show Claude Code sessions in the macOS menu bar.",
+      "mode": "menu-bar",
+      "interval": "10s"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.83.0",
+    "@raycast/utils": "^1.17.0",
+    "dayjs": "^1.11.9"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.11",
+    "@types/node": "20.8.10",
+    "@types/react": "18.3.3",
+    "eslint": "^8.57.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.4.5"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "fix-lint": "ray lint --fix",
+    "lint": "ray lint"
+  }
+}
