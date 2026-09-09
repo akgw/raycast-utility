@@ -1,84 +1,119 @@
-import { runAppleScript } from "@raycast/utils";
+import { execFile } from "child_process";
+import fs from "fs";
 import os from "os";
 import path from "path";
+import { fileURLToPath } from "url";
 import type { SessionEntry } from "./state";
 
-function escapeForAppleScript(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+const VSCODE_APP = "Visual Studio Code";
+const VSCODE_STORAGE = path.join(
+  os.homedir(),
+  "Library",
+  "Application Support",
+  "Code",
+  "User",
+  "globalStorage",
+  "storage.json",
+);
+
+interface OpenedWindow {
+  /** ウィンドウのルートフォルダ。マルチルートワークスペースなら .code-workspace ファイルのパス */
+  target: string;
+  /** cwd との前方一致判定に使うフォルダ群 */
+  folders: string[];
 }
 
-/**
- * VS Code の全ウィンドウ名を返す。activate=true なら VS Code 自体も前面化する。
- * 取得できない(VS Code 未起動・権限なし等)場合は空配列。
- */
-async function listVSCodeWindowNames(options: { activate?: boolean } = {}): Promise<string[]> {
-  const script = `
-    ${options.activate ? 'tell application "Visual Studio Code" to activate' : ""}
-    tell application "System Events"
-      if not (exists process "Code") then return ""
-      tell process "Code"
-        set windowNames to name of every window
-      end tell
-    end tell
-    set AppleScript's text item delimiters to linefeed
-    return windowNames as text
-  `;
+function fileUriToPath(uri: string): string | null {
   try {
-    const out = await runAppleScript(script);
-    return out
-      .split("\n")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
+    return uri.startsWith("file://") ? fileURLToPath(uri) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** .code-workspace ファイルからフォルダ一覧を読む。読めなければ空。 */
+function workspaceFolders(configPath: string): string[] {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath, "utf-8")) as { folders?: { path?: string }[] };
+    const base = path.dirname(configPath);
+    return (parsed.folders ?? [])
+      .map((f) => f.path)
+      .filter((p): p is string => typeof p === "string")
+      .map((p) => (path.isAbsolute(p) ? p : path.resolve(base, p)));
   } catch {
     return [];
   }
 }
 
 /**
- * cwd の basename を上位ディレクトリ方向に辿り、ウィンドウ名に含まれる最初のものを返す。
- * ~/Dev/foo/bar/baz なら baz → bar → foo の順。$HOME と / は候補にしない。見つからなければ null。
+ * VS Code が開いているウィンドウ一覧を storage.json から読む。
+ * VS Code が状態を書き出すタイミング次第で多少古い場合がある。読めなければ空配列。
  */
-function findWindowForCwd(cwd: string, windowNames: string[]): string | null {
-  const home = os.homedir();
-  let current = cwd;
-  for (let i = 0; i < 16; i++) {
-    if (!current || current === "/" || current === home) return null;
-    const segment = path.basename(current);
-    if (segment) {
-      const hit = windowNames.find((name) => name.includes(segment));
-      if (hit) return hit;
+function listOpenedWindows(): OpenedWindow[] {
+  try {
+    const raw = JSON.parse(fs.readFileSync(VSCODE_STORAGE, "utf-8")) as {
+      windowsState?: { openedWindows?: { folder?: string; workspace?: { configPath?: string } }[] };
+    };
+    const windows: OpenedWindow[] = [];
+    for (const w of raw.windowsState?.openedWindows ?? []) {
+      const folder = w.folder ? fileUriToPath(w.folder) : null;
+      if (folder) {
+        windows.push({ target: folder, folders: [folder] });
+        continue;
+      }
+      const configPath = w.workspace?.configPath ? fileUriToPath(w.workspace.configPath) : null;
+      if (configPath) {
+        windows.push({ target: configPath, folders: workspaceFolders(configPath) });
+      }
     }
-    const parent = path.dirname(current);
-    if (parent === current) return null;
-    current = parent;
+    return windows;
+  } catch {
+    return [];
   }
-  return null;
 }
 
-/** 該当する VS Code ウィンドウを前面化し、成功したかを返す。見つからなければ VS Code を activate するだけ。 */
-export async function focusVSCodeWindow(cwd: string): Promise<boolean> {
-  const windowNames = await listVSCodeWindowNames({ activate: true });
-  const target = findWindowForCwd(cwd, windowNames);
-  if (!target) return false;
+function isInside(cwd: string, folder: string): boolean {
+  const rel = path.relative(folder, cwd);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
 
-  const script = `
-    tell application "System Events"
-      tell process "Code"
-        set targetWindow to first window whose name is "${escapeForAppleScript(target)}"
-        perform action "AXRaise" of targetWindow
-      end tell
-    end tell
-  `;
+/** cwd を含むウィンドウのうち、最も深いフォルダで一致するものを返す。見つからなければ null。 */
+function findWindowForCwd(cwd: string, windows: OpenedWindow[]): OpenedWindow | null {
+  let best: { window: OpenedWindow; depth: number } | null = null;
+  for (const window of windows) {
+    for (const folder of window.folders) {
+      if (!isInside(cwd, folder)) continue;
+      const depth = folder.split(path.sep).length;
+      if (!best || depth > best.depth) best = { window, depth };
+    }
+  }
+  return best?.window ?? null;
+}
+
+function openInVSCode(target: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile("/usr/bin/open", ["-a", VSCODE_APP, target], (error) => (error ? reject(error) : resolve()));
+  });
+}
+
+/**
+ * cwd を開いている VS Code ウィンドウを前面化し、成功したかを返す。
+ * 既に開いているフォルダを `open -a` で渡すと VS Code は既存ウィンドウを前面化するだけなので、
+ * 新しいウィンドウは増えない。該当ウィンドウが無ければ何もしない。
+ */
+export async function focusVSCodeWindow(cwd: string): Promise<boolean> {
+  const target = findWindowForCwd(cwd, listOpenedWindows());
+  if (!target) return false;
   try {
-    await runAppleScript(script);
+    await openInVSCode(target.target);
     return true;
   } catch {
     return false;
   }
 }
 
-/** 対応する VS Code ウィンドウが見つからないセッションの ID を返す(VS Code は前面化しない) */
-export async function findSessionsWithoutWindow(sessions: SessionEntry[]): Promise<string[]> {
-  const windowNames = await listVSCodeWindowNames();
-  return sessions.filter((s) => findWindowForCwd(s.cwd, windowNames) === null).map((s) => s.id);
+/** 対応する VS Code ウィンドウが見つからないセッションの ID を返す */
+export function findSessionsWithoutWindow(sessions: SessionEntry[]): string[] {
+  const windows = listOpenedWindows();
+  return sessions.filter((s) => findWindowForCwd(s.cwd, windows) === null).map((s) => s.id);
 }

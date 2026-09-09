@@ -12,7 +12,7 @@ async function focusSession(session: SessionEntry): Promise<void> {
 }
 
 async function removeSessionsWithoutWindow(sessions: SessionEntry[]): Promise<void> {
-  const ids = await findSessionsWithoutWindow(sessions);
+  const ids = findSessionsWithoutWindow(sessions);
   if (ids.length === 0) {
     await showHUD("削除対象なし");
     return;
