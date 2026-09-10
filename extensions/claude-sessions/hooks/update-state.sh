@@ -132,12 +132,15 @@ handle_session_end() {
 
 # Only Agent calls from the main thread count; a hook firing inside a subagent
 # carries agent_id and is ignored so nested agents don't inflate the counter.
+# Sessions not yet registered by a status event are left alone so no partial
+# entry (without cwd/status) is created.
 handle_pre_tool_use() {
   [ "$(input_field '.tool_name')" = "Agent" ] && [ -z "$(input_field '.agent_id')" ] || return 0
   write_state '
-    .sessions[$sid] //= {} |
-    .sessions[$sid].backgroundTasks = ((.sessions[$sid].backgroundTasks // 0) + 1) |
-    .sessions[$sid].updatedAt = $now
+    if .sessions[$sid] then
+      .sessions[$sid].backgroundTasks = ((.sessions[$sid].backgroundTasks // 0) + 1) |
+      .sessions[$sid].updatedAt = $now
+    else . end
   ' --arg sid "$SESSION_ID" --arg now "$(now_iso)"
 }
 

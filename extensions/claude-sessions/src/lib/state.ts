@@ -77,6 +77,7 @@ export function readSessions(stateFile: string = STATE_FILE): SessionEntry[] {
   try {
     const parsed = JSON.parse(fs.readFileSync(stateFile, "utf-8")) as StateFile;
     return Object.entries(parsed.sessions ?? {})
+      .filter(([, entry]) => typeof entry.cwd === "string" && entry.cwd.length > 0)
       .map(([id, entry]) => ({ ...entry, id, status: normalizeStatus(entry.status) }))
       .filter(isLiveSession)
       .sort(compareSessions);
